@@ -3,26 +3,27 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    groups:
+      gh-actions:
+        patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+    open-pull-requests-limit: 3
     groups:
-      next-ecosystem:
-        patterns:
-          - "next"
-          - "react"
-          - "react-dom"
-          - "@types/react*"
+      production:
+        dependency-type: "production"
+        update-types: ["patch", "minor"]
+      dev:
+        dependency-type: "development"
+        update-types: ["patch", "minor"]
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
+    open-pull-requests-limit: 1
