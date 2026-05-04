@@ -1,11 +1,12 @@
 name: Deploy
 
 # Production deploy to the Intent Solutions Contabo VPS at intentsolutions
-# (167.86.106.29). Wraps the canonical reusable workflow at
-# jeremylongshore/.github/.github/workflows/vps-deploy.yml — same pattern as
-# braves-booth (priority 5 of the VPS-as-the-home program).
-#
-# The reusable workflow is pinned by 40-char SHA — supply-chain hardening.
+# (167.86.106.29). Inlined version of the canonical reusable workflow at
+# jeremylongshore/.github/.github/workflows/vps-deploy.yml — that repo is
+# private and this one is public, so GH Actions blocks the cross-repo call.
+# When .github is made public (or this repo private), switch to the
+# `uses: jeremylongshore/.github/.github/workflows/vps-deploy.yml@<SHA>`
+# pattern that braves uses.
 
 on:
   push:
@@ -14,7 +15,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write   # required for Tailscale OIDC
 
 concurrency:
   group: deploy-vps-${{ github.repository }}
@@ -37,19 +38,67 @@ jobs:
       - run: pnpm test
 
   deploy:
+    name: vps-deploy
     needs: test
-    uses: jeremylongshore/.github/.github/workflows/vps-deploy.yml@709a07fbebb1d51806e171204e63f5332abcb0da
-    with:
-      variant: docker
-      srv-path: /srv/lilly-75-holy
-      health-check-url: https://dixieroad.org/api/healthz
-      vps-tailnet-ip: 100.88.144.55
-      vps-public-ip: 167.86.106.29
-      vps-host: intentsolutions
-      vps-user: intentsolutions
-      smoke-validation: '.ok == true'
-    secrets:
-      TS_OIDC_CLIENT_ID: ${{ secrets.TS_OIDC_CLIENT_ID }}
-      TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
-      VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
-      VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Connect Tailscale (OIDC / WIF)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OIDC_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+
+      - name: Wait for tailnet peer to be routable
+        run: |
+          for i in $(seq 1 20); do
+            if sudo tailscale ping --c 1 --timeout 2s 100.88.144.55 >/dev/null 2>&1; then
+              echo "::notice::tailnet peer reachable after ${i} attempt(s)"
+              exit 0
+            fi
+            echo "attempt ${i}: not yet routable, sleeping 2s"
+            sleep 2
+          done
+          echo "::error::tailnet peer never became routable; aborting"
+          sudo tailscale status || true
+          exit 1
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.VPS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Strict pin (from secret) plus live-scan fallback so the entry
+          # for the literal hostname we use below is always present.
+          echo "${{ secrets.VPS_HOST_KEY }}" > ~/.ssh/known_hosts
+          ssh-keyscan -t ed25519 intentsolutions >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -t ed25519 100.88.144.55  >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -o IdentitiesOnly=yes intentsolutions@intentsolutions <<'REMOTE'
+          set -euo pipefail
+          cd /srv/lilly-75-holy
+          git fetch --all --prune
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker image prune -f
+          REMOTE
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS https://dixieroad.org/api/healthz | tee /tmp/h.json | jq -e '.ok == true' >/dev/null; then
+              echo "::notice::healthz OK on attempt ${i}"
+              exit 0
+            fi
+            echo "attempt ${i}: not yet, sleeping 5s"
+            sleep 5
+          done
+          echo "::error::healthz did not return ok=true"
+          cat /tmp/h.json || true
+          exit 1
