@@ -1,13 +1,12 @@
 name: Deploy
 
 # Production deploy to the Intent Solutions Contabo VPS at intentsolutions
-# (167.86.106.29). Wraps the canonical reusable workflow at
-# jeremylongshore/.github/.github/workflows/vps-deploy.yml — same pattern as
-# braves-booth (priority 5 of the VPS-as-the-home program).
-#
-# The reusable workflow is pinned by 40-char SHA — supply-chain hardening.
-# To upgrade: bump the SHA after reviewing the diff at
-# https://github.com/jeremylongshore/.github/commits/main
+# (167.86.106.29). Direct-SSH variant — uses the per-repo ed25519 deploy key
+# to SSH into the VPS over the public IP. Tailscale OIDC was tried first
+# (canonical pattern), but the trust on Tailscale rejected the token
+# exchange (HTTP 400) — likely a stale credential in the runbook sops.
+# When that's resolved, switch back to the canonical reusable workflow at
+# jeremylongshore/.github/.github/workflows/vps-deploy.yml@<SHA>.
 
 on:
   push:
@@ -16,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # required for Tailscale OIDC
 
 concurrency:
   group: deploy-vps-${{ github.repository }}
@@ -39,19 +37,45 @@ jobs:
       - run: pnpm test
 
   deploy:
+    name: ssh-deploy
     needs: test
-    uses: jeremylongshore/.github/.github/workflows/vps-deploy.yml@709a07fbebb1d51806e171204e63f5332abcb0da
-    with:
-      variant: docker
-      srv-path: /srv/lilly-75-holy
-      health-check-url: https://dixieroad.org/api/healthz
-      vps-tailnet-ip: 100.88.144.55
-      vps-public-ip: 167.86.106.29
-      vps-host: intentsolutions
-      vps-user: intentsolutions
-      smoke-validation: '.ok == true'
-    secrets:
-      TS_OIDC_CLIENT_ID: ${{ secrets.TS_OIDC_CLIENT_ID }}
-      TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
-      VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
-      VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Pinned host key from secret + live-scan of the public IP as
+          # belt-and-suspenders so the literal IP we use below has an entry.
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          ssh-keyscan -t ed25519 167.86.106.29 >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -o IdentitiesOnly=yes -o BatchMode=yes intentsolutions@167.86.106.29 <<'REMOTE'
+          set -euo pipefail
+          cd /srv/lilly-75-holy
+          git fetch --all --prune
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker image prune -f
+          REMOTE
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS https://dixieroad.org/api/healthz | tee /tmp/h.json | jq -e '.ok == true' >/dev/null; then
+              echo "::notice::healthz OK on attempt ${i}"
+              exit 0
+            fi
+            echo "attempt ${i}: not yet, sleeping 5s"
+            sleep 5
+          done
+          echo "::error::healthz did not return ok=true"
+          cat /tmp/h.json || true
+          exit 1
