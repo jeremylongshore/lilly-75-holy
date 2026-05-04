@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.2] - 2026-05-04
+
+- fix(ci): drop explicit pnpm version, defer to packageManager field (e832e50)
+
+
 ## [v0.1.1] - 2026-05-04
 
 - chore: lockfile, native build approval, and gate fixes (9762434)
