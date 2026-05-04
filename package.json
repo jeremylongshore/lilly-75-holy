@@ -1,6 +1,6 @@
 {
   "name": "lilly-75-holy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "75-day Christian discipline tracker for Lilly Grace + Ellie",
   "license": "MIT",
@@ -49,6 +49,9 @@
   },
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "bcryptjs"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "bcryptjs"
+    ]
   }
 }

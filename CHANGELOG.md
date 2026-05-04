@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.1] - 2026-05-04
+
+- chore: lockfile, native build approval, and gate fixes (9762434)
+
+
 ## [v0.1.0] - 2026-05-04
 
 - feat: initial scaffold for 75 Holy habit tracker (e729849)
