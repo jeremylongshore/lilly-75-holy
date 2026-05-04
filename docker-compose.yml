@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    image: lilly-75-holy:latest
+    container_name: holy-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DATABASE_PATH: /data/holy.db
+      TZ: America/New_York
+      SESSION_SECRET: ${SESSION_SECRET}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - holy-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  holy-data:
