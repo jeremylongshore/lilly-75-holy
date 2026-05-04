@@ -1,13 +1,16 @@
 name: Deploy
 
 # Production deploy to the Intent Solutions Contabo VPS at intentsolutions
-# (167.86.106.29). Uses the canonical reusable workflow at
-# jeremylongshore/.github/.github/workflows/vps-deploy.yml — same pattern as
-# braves-booth (priority 5 of the VPS-as-the-home program).
+# (167.86.106.29). VPS UFW only accepts SSH from the tailnet — so the runner
+# must join the tailnet first before SSHing.
 #
-# Tailscale OIDC trust: dedicated per-repo federated key on the tailnet
-# (created 2026-05-04). VPS UFW only accepts SSH from the tailnet, which
-# is why the OIDC path is required.
+# Auth path: long-lived, reusable, ephemeral, tag:ci-restricted Tailscale
+# auth-key (TS_AUTHKEY). Tailscale OIDC is the canonical pattern but its
+# token exchange persistently returned HTTP 400 invalid_request for every
+# trust we configured (incl. fresh per-repo trusts created via the
+# Tailscale REST API), suggesting a UI-vs-API trust-config gap. Auth-key
+# works today; revisit OIDC when the canonical reusable workflow at
+# jeremylongshore/.github starts passing again on braves-booth.
 
 on:
   push:
@@ -16,7 +19,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # required for Tailscale OIDC
 
 concurrency:
   group: deploy-vps-${{ github.repository }}
@@ -39,19 +41,65 @@ jobs:
       - run: pnpm test
 
   deploy:
+    name: vps-deploy
     needs: test
-    uses: jeremylongshore/.github/.github/workflows/vps-deploy.yml@709a07fbebb1d51806e171204e63f5332abcb0da
-    with:
-      variant: docker
-      srv-path: /srv/lilly-75-holy
-      health-check-url: https://dixieroad.org/api/healthz
-      vps-tailnet-ip: 100.88.144.55
-      vps-public-ip: 167.86.106.29
-      vps-host: intentsolutions
-      vps-user: intentsolutions
-      smoke-validation: '.ok == true'
-    secrets:
-      TS_OIDC_CLIENT_ID: ${{ secrets.TS_OIDC_CLIENT_ID }}
-      TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
-      VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
-      VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect Tailscale (auth key)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:ci
+
+      - name: Wait for tailnet peer to be routable
+        run: |
+          for i in $(seq 1 20); do
+            if sudo tailscale ping --c 1 --timeout 2s 100.88.144.55 >/dev/null 2>&1; then
+              echo "::notice::tailnet peer reachable after ${i} attempt(s)"
+              sudo tailscale status | head -3 || true
+              exit 0
+            fi
+            echo "attempt ${i}: not yet routable, sleeping 2s"
+            sleep 2
+          done
+          echo "::error::tailnet peer never became routable; aborting"
+          sudo tailscale status || true
+          exit 1
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          ssh-keyscan -t ed25519 intentsolutions  >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -t ed25519 100.88.144.55    >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -o IdentitiesOnly=yes -o BatchMode=yes intentsolutions@intentsolutions <<'REMOTE'
+          set -euo pipefail
+          cd /srv/lilly-75-holy
+          git fetch --all --prune
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker image prune -f
+          REMOTE
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS https://dixieroad.org/api/healthz | tee /tmp/h.json | jq -e '.ok == true' >/dev/null; then
+              echo "::notice::healthz OK on attempt ${i}"
+              exit 0
+            fi
+            echo "attempt ${i}: not yet, sleeping 5s"
+            sleep 5
+          done
+          echo "::error::healthz did not return ok=true"
+          cat /tmp/h.json || true
+          exit 1
