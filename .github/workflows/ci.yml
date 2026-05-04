@@ -26,7 +26,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile  # TODO: switch to --frozen-lockfile after first commit-with-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: pnpm typecheck

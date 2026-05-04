@@ -54,7 +54,7 @@ export default async function TodayPage() {
 
       <div className="space-y-5">
         <Card>
-          <CardTitle>Today's checks</CardTitle>
+          <CardTitle>Today&apos;s checks</CardTitle>
           <DailyChecklist initial={rules} />
         </Card>
 

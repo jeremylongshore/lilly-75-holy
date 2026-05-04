@@ -13,7 +13,7 @@ export function CutFoodPicker({ initial }: { initial: string | null }) {
     return (
       <div className="rounded-xl bg-sage-50 border border-sage-200 px-4 py-3">
         <div className="text-sm text-sage-800">
-          You're cutting <strong className="font-semibold">{value}</strong> for 75 days.
+          You&apos;re cutting <strong className="font-semibold">{value}</strong> for 75 days.
         </div>
       </div>
     );
@@ -38,7 +38,7 @@ export function CutFoodPicker({ initial }: { initial: string | null }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <p className="text-sm text-muted">
-        Pick the one food item you're cutting for the full 75 days. (Examples: soda, fast food, candy, fried food.)
+        Pick the one food item you&apos;re cutting for the full 75 days. (Examples: soda, fast food, candy, fried food.)
       </p>
       <div className="flex gap-2">
         <Input

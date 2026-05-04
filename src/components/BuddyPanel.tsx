@@ -61,7 +61,7 @@ export function BuddyPanel() {
 
   return (
     <Card>
-      <CardTitle>{data.name}'s day</CardTitle>
+      <CardTitle>{data.name}&apos;s day</CardTitle>
       <div className="text-sm text-muted mb-3">
         {checkedCount} / {totalDaily} checks · streak {data.streak ?? 0} day{(data.streak ?? 0) === 1 ? "" : "s"}
       </div>

@@ -30,6 +30,7 @@ async function freshSetup() {
   // Force a re-import after env vars are set so getDb picks up DATABASE_PATH.
   const dbMod = await import(`../../src/lib/db?ts=${Date.now()}`);
   const buddyMod = await import(`../../src/lib/buddy?ts=${Date.now()}`);
+  const dateMod = await import(`../../src/lib/date?ts=${Date.now()}`);
   const db = dbMod.getDb();
   const me = { id: crypto.randomUUID(), name: "Lilly Grace" };
   const buddy = { id: crypto.randomUUID(), name: "Ellie" };
@@ -38,7 +39,7 @@ async function freshSetup() {
 
   // Buddy writes a journal that contains a unique sentinel string.
   const sentinel = "DEEPLY_PERSONAL_JOURNAL_SENTINEL_" + crypto.randomBytes(8).toString("hex");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateMod.todayLocal();
   db.prepare(
     "INSERT INTO daily_entries (user_id, entry_date, rules_json, journal) VALUES (?, ?, ?, ?)",
   ).run(buddy.id, today, JSON.stringify({ water: true, prayer: true }), sentinel);
