@@ -51,20 +51,8 @@ jobs:
           authkey: ${{ secrets.TS_AUTHKEY }}
           tags: tag:ci
 
-      - name: Wait for tailnet peer to be routable
-        run: |
-          for i in $(seq 1 20); do
-            if sudo tailscale ping --c 1 --timeout 2s 100.88.144.55 >/dev/null 2>&1; then
-              echo "::notice::tailnet peer reachable after ${i} attempt(s)"
-              sudo tailscale status | head -3 || true
-              exit 0
-            fi
-            echo "attempt ${i}: not yet routable, sleeping 2s"
-            sleep 2
-          done
-          echo "::error::tailnet peer never became routable; aborting"
-          sudo tailscale status || true
-          exit 1
+      - name: Tailnet status (informational)
+        run: sudo tailscale status || true
 
       - name: Configure SSH
         env:
@@ -79,8 +67,23 @@ jobs:
           ssh-keyscan -t ed25519 100.88.144.55    >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy
+      - name: Deploy (with retry — tailnet peer takes a few seconds to become routable)
         run: |
+          for i in 1 2 3 4 5 6 7 8; do
+            if ssh -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8 \
+                 intentsolutions@intentsolutions 'true' 2>/dev/null; then
+              echo "::notice::SSH reachable on attempt ${i}"
+              break
+            fi
+            echo "attempt ${i}: SSH not yet ready, sleeping 4s"
+            sleep 4
+            if [ $i -eq 8 ]; then
+              echo "::error::SSH never became reachable"
+              sudo tailscale status || true
+              exit 1
+            fi
+          done
+
           ssh -o IdentitiesOnly=yes -o BatchMode=yes intentsolutions@intentsolutions <<'REMOTE'
           set -euo pipefail
           cd /srv/lilly-75-holy
