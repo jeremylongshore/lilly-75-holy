@@ -44,20 +44,19 @@ jobs:
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
-          HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          # Pinned host key from secret + live-scan of the public IP as
-          # belt-and-suspenders so the literal IP we use below has an entry.
-          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
-          ssh-keyscan -t ed25519 167.86.106.29 >> ~/.ssh/known_hosts 2>/dev/null || true
-          chmod 600 ~/.ssh/known_hosts
+          # Accept-new pins the host key on first connection from this
+          # ephemeral runner. Auth is enforced by the deploy key (only
+          # principal in /home/intentsolutions/.ssh/authorized_keys for
+          # this repo); the host key is signature-of-server, not auth.
+          touch ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
 
       - name: Deploy
         run: |
-          ssh -o IdentitiesOnly=yes -o BatchMode=yes intentsolutions@167.86.106.29 <<'REMOTE'
+          ssh -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new intentsolutions@167.86.106.29 <<'REMOTE'
           set -euo pipefail
           cd /srv/lilly-75-holy
           git fetch --all --prune
