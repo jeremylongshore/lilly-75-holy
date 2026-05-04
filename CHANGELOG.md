@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.0] - 2026-05-04
+
+- feat: initial scaffold for 75 Holy habit tracker (e729849)
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
